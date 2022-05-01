@@ -1,0 +1,242 @@
+
+<body>
+  <style>
+    html, body {
+      padding: 0px;
+      margin: 0px;
+    }
+    @font-face {
+      font-family: "ComicMono";
+      src: url("ComicMono.ttf") format("truetype");
+    }
+
+    body {
+      background: #11998e;  /* fallback for old browsers */
+      background: -webkit-linear-gradient(to right, #0bab64, #11998e);  /* Chrome 10-25, Safari 5.1-6 */
+      background: linear-gradient(to right, #0bab64, #11998e); /* W3C, IE 10+/ Edge, Firefox 16+, Chrome 26+, Opera 12+, Safari 7+ */
+
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    pre {
+      margin: 64px;
+      padding: 38px;
+      background: #232526;
+      background: -webkit-linear-gradient(to right, #282a36, #232526);
+      background: linear-gradient(to right, #282a36, #232526);
+      width: fit-content;
+      height: 500px;
+      border-radius: 16px;
+      box-shadow: 0 22px 70px 4px rgba(0, 0, 0, 0.56);
+    }
+
+    code {
+      padding: 0px;
+      margin: 0px;
+      font-family: ComicMono;
+      line-height: 1.2;
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow-y: hidden;
+    }
+
+    .comment {
+      color: #44475a;
+    }
+
+    .leaf-term, .nest {
+      color: #f1fa8c;
+    }
+
+    .tree-term, .comma {
+      color: #bd93f9;
+    }
+
+    .text {
+      color: #ff79c6;
+    }
+
+    .inline .leaf-term {
+      color: #f8f8f2;
+    }
+
+    .mark {
+      color: #ff79c6;
+    }
+
+    .code {
+      color: #ff79c6;
+    }
+  </style>
+  <pre><code></code></pre>
+  <script src="parse.js"></script>
+  <script src="lex.js"></script>
+  <script src="code.js"></script>
+<script>
+
+  function highlight(code) {
+    const ast = parse(lex(code.trim()))
+    const text = ast.stem.map(stem => highlightStem(stem).join('\n')).join('\n').trim()
+
+    document.querySelector('code').innerHTML = text
+
+    function highlightTerm(term, depth, isTreeHost) {
+      const text = []
+      const tagName = isTreeHost ? 'tree-term' : 'leaf-term'
+      term.link.forEach(link => {
+        switch (link.form) {
+          case 'cord':
+            text.push(tag(tagName, link.cord))
+            break
+          case 'stem':
+            text.push(tag(tagName, '{'))
+            const inlineText = highlightStem(link, depth + 1)[0]
+            text.push(tag('inline', inlineText))
+            text.push(tag(tagName, '}'))
+            break
+          default:
+            console.log(node)
+            throw new Error
+        }
+      })
+      return text.join('')
+    }
+
+    function highlightHost(host, depth, isTreeHost) {
+      const text = []
+      const tagName = isTreeHost ? 'tree-term' : 'leaf-term'
+      host.forEach((node, i) => {
+        switch (node.form) {
+          case 'term': {
+            if (i > 0) {
+              text.push(tag(tagName, '/'))
+            }
+            text.push(highlightTerm(node, depth, isTreeHost))
+            break
+          }
+          case 'mark':
+            if (i > 0) {
+              text.push(tag(tagName, '/'))
+            }
+            highlightMark(node).forEach(line => {
+              text.push(line)
+            })
+            break
+          case 'code':
+            if (i > 0) {
+              text.push(tag(tagName, '/'))
+            }
+            highlightCode(node).forEach(line => {
+              text.push(line)
+            })
+            break
+          case 'text':
+            if (i > 0) {
+              text.push(tag(tagName, '/'))
+            }
+            highlightText(node).forEach(line => {
+              text.push(line)
+            })
+            break
+          case 'cord':
+            if (i > 0) {
+              text.push(tag(tagName, '/'))
+            }
+            text.push(tag('text', node.text))
+            break
+          case 'stem': {
+            const nestedText = highlightStem(node, depth + 1).join('')
+            text.push(tag(tagName, '['))
+            text.push(tag('nested', nestedText))
+            text.push(tag(tagName, ']'))
+            break
+          }
+          default:
+            console.log(node)
+            throw new Error
+        }
+      })
+      return text.join('')
+    }
+
+    function highlightStem(stem, depth = 1, index = 0) {
+      const text = []
+      const name = stem.host[0].link?.[0]?.cord ?? ''
+      const hasIndent = !!name.match(/^(?:hook|task|form)$/) || (depth == 1 && name.match(/^(?:lace|mine)$/))
+      const hasExtraSpace = !!name.match(/^(?:back|walk)$/) || ((index > 1 || depth == 1) && name.match(/^(?:lace|mine|form|task)$/))
+
+      if (hasExtraSpace) {
+        text.push(tag('line', ''))
+      }
+
+      const host = highlightHost(stem.host, depth, stem.stem.length > 0)
+      const children = []
+      stem.stem.forEach((s, i) => {
+        children.push(...highlightStem(s, depth + 1, i))
+      })
+
+      if (children.length) {
+        const first = children.shift()
+        if (!hasIndent && children.length === 1) {
+          const second = children.shift()
+          if (second) {
+            text.push(`${host} ${first}${tag('comma', ', ')}${second}`)
+          } else {
+            text.push(`${host} ${first}`)
+          }
+        } else {
+          text.push(`${host} ${first}`)
+        }
+      } else {
+        text.push(host)
+      }
+
+      children.forEach(line => {
+        text.push(tag('space', `  `) + `${line}`)
+      })
+
+      return text
+    }
+
+    function highlightMark(stem) {
+      return [tag('mark', String(stem.mark))]
+    }
+
+    function highlightCode(stem) {
+      return [tag('code', String(stem.code))]
+    }
+
+    function highlightText(stem) {
+      const line = [tag('text', escapeHTML(`<`))]
+      stem.stem.forEach(stem => {
+        switch (stem.form) {
+          case 'cord':
+            line.push(tag('text', stem.text))
+            break
+          case 'read':
+            line.push(tag('text', '{'))
+            const inlineText = highlightStem(stem)[0]
+            line.push(tag('inline', inlineText))
+            line.push(tag('text', '}'))
+            break
+        }
+      })
+      line.push(tag('text', escapeHTML(`>`)))
+      return [line.join('')]
+    }
+
+    function tag(style, t) {
+      return `<span class="${style}">${t}</span>`
+    }
+  }
+
+  function escapeHTML(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  highlight(code())
+</script>
+</body>
